@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BetIQ v2 · Chuy</title>
+<title>BetIQ v3 · Chuy</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,400&display=swap" rel="stylesheet">
 <style>
@@ -204,7 +204,28 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;fon
 .del-btn{background:transparent;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:4px}
 .del-btn:hover{color:var(--red)}
 
-@media(max-width:768px){
+/* TOTALS SECTION */
+.totals-section{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+.totals-title{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;font-weight:500}
+.total-row{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.total-label{width:90px;font-size:11px;color:var(--text2);flex-shrink:0}
+.total-track{flex:1;height:8px;background:var(--bg4);border-radius:4px;overflow:hidden;position:relative}
+.total-fill-over{height:100%;border-radius:4px;background:linear-gradient(90deg,#4fc3f7,#7c6af7);transition:width .6s ease}
+.total-fill-under{height:100%;border-radius:4px;background:linear-gradient(90deg,#b388ff,#ff5252);transition:width .6s ease}
+.total-pct{width:32px;text-align:right;font-size:12px;font-weight:500;color:var(--text2)}
+.total-rec{display:flex;justify-content:space-between;align-items:center;padding:8px 11px;border-radius:8px;margin-top:8px}
+.total-rec.over{background:var(--blue-dim);border:1px solid var(--blue-border)}
+.total-rec.under{background:var(--red-dim);border:1px solid var(--red-border)}
+.total-rec.push{background:var(--amber-dim);border:1px solid var(--amber-border)}
+.total-rec-text{font-size:13px;font-weight:500}
+.total-rec.over .total-rec-text{color:var(--blue)}
+.total-rec.under .total-rec-text{color:var(--red)}
+.total-rec.push .total-rec-text{color:var(--amber)}
+.total-line{font-size:11px;color:var(--text3);margin-top:2px}
+.total-conf{font-size:12px;font-weight:700;padding:3px 9px;border-radius:20px}
+.total-conf.over{background:var(--blue-dim);color:var(--blue);border:1px solid var(--blue-border)}
+.total-conf.under{background:var(--red-dim);color:var(--red);border:1px solid var(--red-border)}
+.total-conf.push{background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber-border)}
   .metrics{grid-template-columns:repeat(2,1fr)}
   .wrap{padding:1rem}
   .topbar{padding:0 1rem}
@@ -216,7 +237,7 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;fon
 <body>
 
 <div class="topbar">
-  <div class="logo"><div class="logo-dot"></div>BetIQ v2 · Chuy</div>
+  <div class="logo"><div class="logo-dot"></div>BetIQ v3 · Chuy</div>
   <div class="topbar-right">
     <div class="pill">Llamadas: <b id="calls-left">—</b></div>
     <button class="btn" onclick="reload()">↻ Actualizar</button>
@@ -500,7 +521,7 @@ function renderFormDots(form){
   return'<div class="form-dots">'+form.map(r=>`<div class="fdot ${r}">${r}</div>`).join('')+'</div>';
 }
 
-function renderCard(game, analysis, leagueLabel){
+function renderCard(game, analysis, leagueLabel, totals=null){
   const{conf,cls,best,hasVal,q1,q1cls,q2,q2cls,q3,q3cls,q4,q5,q5cls,q7,q7cls,stake,homeInj,awayInj,hRecord,aRecord,hO,aO,dO,hP,aP,dP}=analysis;
   const home=game.home_team, away=game.away_team;
   const homeShort=home.split(' ').slice(-2).join(' ');
@@ -581,11 +602,107 @@ function renderCard(game, analysis, leagueLabel){
       </div>
       <span class="conf-badge ${cls}">${conf}%</span>
     </div>
+
+    ${totals?renderTotals(totals,activeSport):''}
+
     <button class="deep-btn" onclick="openDeep(${JSON.stringify(home)},${JSON.stringify(away)},${JSON.stringify(fmtOdds(hO))},${JSON.stringify(fmtOdds(aO))},${JSON.stringify(dO?fmtOdds(dO):'N/A')},${JSON.stringify(leagueLabel)})">Ver análisis profundo con Claude ↗</button>
   </div>`;
 }
 
-// ── LOAD ──
+// ── TOTALS (Over/Under) ──
+async function fetchTotals(leagueKey){
+  try{
+    const url=`${ODDS_BASE}/sports/${leagueKey}/odds/?apiKey=${ODDS_KEY}&regions=us,eu&markets=totals&oddsFormat=american&dateFormat=iso`;
+    const res=await fetch(url);
+    if(!res.ok)return{};
+    const games=await res.json();
+    const map={};
+    for(const g of games){
+      const bk=g.bookmakers?.[0];
+      if(!bk)continue;
+      const mk=bk.markets?.find(m=>m.key==='totals');
+      if(!mk)continue;
+      const over=mk.outcomes?.find(o=>o.name==='Over');
+      const under=mk.outcomes?.find(o=>o.name==='Under');
+      if(over&&under){
+        map[g.id]={
+          line:over.point,
+          overOdds:over.price,
+          underOdds:under.price,
+          gameId:g.id
+        };
+      }
+    }
+    return map;
+  }catch{return{}}
+}
+
+function analyzeTotals(totalsData, sport){
+  if(!totalsData)return null;
+  const{line,overOdds,underOdds}=totalsData;
+  if(!line)return null;
+
+  const overProb=impliedProb(overOdds)||0.5;
+  const underProb=impliedProb(underOdds)||0.5;
+  const total=overProb+underProb;
+  const oP=overProb/total;
+  const uP=underProb/total;
+
+  const overVal=calcVal(oP,decOdds(overOdds));
+  const underVal=calcVal(uP,decOdds(underOdds));
+
+  let rec, recCls, conf, val;
+  if(oP>uP){
+    rec=`Over ${line}`;recCls='over';conf=Math.round(oP*100);val=overVal;
+  }else{
+    rec=`Under ${line}`;recCls='under';conf=Math.round(uP*100);val=underVal;
+  }
+
+  // Contexto por deporte
+  let context='';
+  if(sport==='baseball'){
+    if(line>=9)context=`Línea alta (${line}) — pitcheo débil o estadio favorable a bateo`;
+    else if(line<=7)context=`Línea baja (${line}) — pitcheo dominante esperado`;
+    else context=`Línea media (${line}) — partido equilibrado`;
+  }else if(sport==='basketball'){
+    if(line>=230)context=`Ritmo alto (${line}pts) — equipos de mucho pace`;
+    else if(line<=210)context=`Ritmo lento (${line}pts) — defensa élite o back-to-back`;
+    else context=`Ritmo normal (${line}pts) — partido estándar`;
+  }else{
+    if(line>=2.5)context=`Línea ${line} goles — partido abierto esperado`;
+    else context=`Línea ${line} goles — partido cerrado esperado`;
+  }
+
+  const hasVal=val>3;
+  return{rec,recCls,conf,val,hasVal,line,overOdds,underOdds,oP,uP,context};
+}
+
+function renderTotals(t, sport){
+  if(!t)return'';
+  const sportLabel=sport==='baseball'?'carreras':sport==='basketball'?'puntos':'goles';
+  return`<div class="totals-section">
+    <div class="totals-title">📊 Over/Under ${sportLabel}</div>
+    <div class="total-row">
+      <span class="total-label">Over ${t.line}</span>
+      <div class="total-track"><div class="total-fill-over" style="width:${Math.round(t.oP*100)}%"></div></div>
+      <span class="total-pct">${Math.round(t.oP*100)}%</span>
+    </div>
+    <div class="total-row">
+      <span class="total-label">Under ${t.line}</span>
+      <div class="total-track"><div class="total-fill-under" style="width:${Math.round(t.uP*100)}%"></div></div>
+      <span class="total-pct">${Math.round(t.uP*100)}%</span>
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin:4px 0 6px">${t.context}</div>
+    <div class="total-rec ${t.recCls}">
+      <div>
+        <div style="font-size:10px;color:var(--text3);margin-bottom:2px;text-transform:uppercase;letter-spacing:.05em">Apuesta de totales</div>
+        <div class="total-rec-text">${t.rec} ${sportLabel}<span class="vtag ${t.hasVal?'yes':'no'}" style="margin-left:6px">${t.hasVal?'+valor':'sin valor'}</span></div>
+        <div class="total-line">Cuotas: Over ${fmtOdds(t.overOdds)} / Under ${fmtOdds(t.underOdds)}</div>
+      </div>
+      <span class="total-conf ${t.recCls}">${t.conf}%</span>
+    </div>
+  </div>`;
+}
 async function loadLeague(leagueKey, leagueLabel, espnPath){
   activeLeague=leagueKey;
   updateLBtns();
@@ -609,8 +726,11 @@ async function loadLeague(leagueKey, leagueLabel, espnPath){
       return;
     }
 
-    // Fetch ESPN injuries (best effort)
-    const injuries=espnPath?await getInjuries(espnPath):[];
+    // Fetch totals y ESPN en paralelo
+    const [totalsMap, injuries]=await Promise.all([
+      fetchTotals(leagueKey),
+      espnPath?getInjuries(espnPath):Promise.resolve([])
+    ]);
 
     let valueCount=0,highConf=0,bestPick='—',bestConf=0;
     const cards=await Promise.all(games.slice(0,12).map(async g=>{
@@ -621,10 +741,12 @@ async function loadLeague(leagueKey, leagueLabel, espnPath){
         if(at?.id)aRecord=parseRecord(await getTeamRecord(espnPath,at.id));
       }
       const analysis=analyzeGame(g,null,null,hRecord,aRecord,injuries);
-      if(analysis.hasVal)valueCount++;
+      const totalsRaw=totalsMap[g.id]||null;
+      const totals=analyzeTotals(totalsRaw,activeSport);
+      if(analysis.hasVal||(totals?.hasVal))valueCount++;
       if(analysis.conf>=60)highConf++;
       if(analysis.conf>bestConf){bestConf=analysis.conf;bestPick=analysis.best.label.split(' ').slice(-2).join(' ')+' ('+analysis.conf+'%)'}
-      return renderCard(g,analysis,leagueLabel);
+      return renderCard(g,analysis,leagueLabel,totals);
     }));
 
     container.innerHTML=cards.join('');
